@@ -186,9 +186,9 @@ function buildNode(streak) {
   const wrap = document.createElement('div');
   // Match the class pattern of the "Max streak" sibling: "space-x-1"
   // plus mr-4.5 for right margin to match "Total active days" sibling
-  // ml-4.5 matches the right-margin LeetCode puts on "Total active days",
-  // giving us the same gap to the left (between "Max streak" and us).
-  wrap.className = `ml-4.5 mr-4.5 space-x-1 ${SENTINEL_CLASS}`;
+  // No margin on our div — the spacing comes from patching mr-4.5
+  // onto the "Max streak" sibling (see patchMaxStreakSpacing below).
+  wrap.className = `space-x-1 ${SENTINEL_CLASS}`;
 
   const label = document.createElement('span');
   label.className   = 'text-label-3 dark:text-dark-label-3';
@@ -203,12 +203,30 @@ function buildNode(streak) {
   return wrap;
 }
 
+/**
+ * Add mr-4.5 to the "Max streak" sibling so it pushes our element away,
+ * matching the spacing that "Total active days" uses via its own mr-4.5.
+ * Idempotent — only adds the class once.
+ */
+function patchMaxStreakSpacing(container) {
+  for (const child of container.children) {
+    const txt = (child.textContent || '').toLowerCase();
+    if (txt.includes('max streak') && !child.classList.contains('mr-4.5')) {
+      child.classList.add('mr-4.5');
+      LOG('Patched mr-4.5 onto Max streak sibling');
+      return;
+    }
+  }
+}
+
 /** Guard: stops our own insertion from re-triggering the MutationObserver */
 let _inserting = false;
 
 function upsertStreakElement(streak) {
+  // Ensure Max streak has the right-margin before we insert next to it.
   const container = findStatsContainer();
   if (!container) { LOG('upsertStreakElement: container not ready'); return; }
+  patchMaxStreakSpacing(container);
 
   // Update in-place if already present
   const existing = container.querySelector(`.${SENTINEL_CLASS}`);
@@ -323,40 +341,50 @@ function watchStatsContainer(container) {
   statsObserver.observe(container, { childList: true, subtree: false });
 }
 
-/* ─── Body observer (SPA mount detection) ───── */
 
-let _pending = false;
+/* ─── Bootstrap: run on page load ───────────── */
 
-const bodyObserver = new MutationObserver(() => {
-  if (!getUsernameFromUrl() || _pending) return;
-  _pending = true;
-  setTimeout(() => { _pending = false; tryRender(); }, 200);
+/**
+ * Wait for the stats container to appear, then render the streak.
+ * LeetCode is a React app so the stats row may not exist immediately
+ * after DOMContentLoaded — we poll for it (max 10 attempts, 500 ms apart).
+ */
+function waitAndRender() {
+  const username = getUsernameFromUrl();
+  if (!username) {
+    LOG('Not a profile page — nothing to do');
+    return;
+  }
+
+  LOG(`Profile page detected for "${username}" — waiting for stats row…`);
+
+  let attempts = 0;
+  const MAX    = 20;        // 20 × 500 ms = 10 seconds max wait
+  const DELAY  = 500;       // ms between retries
+
+  const poll = setInterval(() => {
+    attempts++;
+    const container = findStatsContainer();
+
+    if (container) {
+      clearInterval(poll);
+      LOG(`Stats container found after ${attempts} attempt(s) ✓`);
+      currentUsername = username;
+      watchStatsContainer(container);   // guard against React re-renders
+      renderStreak(username);
+      return;
+    }
+
+    if (attempts >= MAX) {
+      clearInterval(poll);
+      LOG(`Stats container not found after ${MAX} attempts — giving up`);
+    }
+  }, DELAY);
+}
+
+// Run as soon as the page (and its scripts) have finished loading.
+window.addEventListener('load', () => {
+  LOG('window.load fired');
+  waitAndRender();
 });
 
-/* ─── History patching (SPA navigation) ─────── */
-
-function patchHistory() {
-  for (const m of ['pushState', 'replaceState']) {
-    const orig = history[m].bind(history);
-    history[m] = function (...a) { orig(...a); onUrlChange(); };
-  }
-  window.addEventListener('popstate', onUrlChange);
-  LOG('History patched');
-}
-
-function onUrlChange() {
-  LOG('URL change →', window.location.href);
-  currentUsername = null;
-  setTimeout(tryRender, 250);
-}
-
-/* ─── Bootstrap ──────────────────────────────── */
-
-function init() {
-  LOG('init()');
-  patchHistory();
-  bodyObserver.observe(document.body, { childList: true, subtree: true });
-  tryRender();
-}
-
-document.body ? init() : document.addEventListener('DOMContentLoaded', init);
