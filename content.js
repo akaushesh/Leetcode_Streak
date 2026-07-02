@@ -43,22 +43,22 @@ let activeController = null;
 
 /* ─── Streak algorithm ───────────────────────── */
 
-function tsToLocalDate(ts) {
+function tsToUTCDate(ts) {
   const d = new Date(ts * 1000);
   return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
+    d.getUTCFullYear(),
+    String(d.getUTCMonth() + 1).padStart(2, '0'),
+    String(d.getUTCDate()).padStart(2, '0'),
   ].join('-');
 }
 
 function subtractDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() - n);
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() - n);
   return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, '0'),
-    String(d.getDate()).padStart(2, '0'),
+    d.getUTCFullYear(),
+    String(d.getUTCMonth() + 1).padStart(2, '0'),
+    String(d.getUTCDate()).padStart(2, '0'),
   ].join('-');
 }
 
@@ -67,12 +67,12 @@ function computeStreak(calendarJson) {
   try { raw = JSON.parse(calendarJson); }
   catch (e) { ERR('JSON parse failed:', e); return 0; }
 
-  const dates = new Set(Object.keys(raw).map(ts => tsToLocalDate(Number(ts))));
+  const dates = new Set(Object.keys(raw).map(ts => tsToUTCDate(Number(ts))));
   LOG(`Calendar: ${Object.keys(raw).length} entries → ${dates.size} unique dates`);
 
   if (dates.size === 0) return 0;
 
-  const today  = tsToLocalDate(Date.now() / 1000);
+  const today  = tsToUTCDate(Date.now() / 1000);
   const anchor = dates.has(today) ? today : subtractDays(today, 1);
   LOG(`Today: ${today} | Anchor: ${anchor} | Today has sub: ${dates.has(today)}`);
 
